@@ -1,0 +1,8 @@
+{
+  "email": "2022cs0298@svce.ac.in",
+  "name": "nithish mr",
+  "rollNo": "098",
+  "accessCode": "ZRsYXx",
+  "clientID": "510c9367-0766-4da6-a435-75c66b4febf3",
+  "clientSecret": "xKbKgSzvTnuCzpwv"
+}
