@@ -33,10 +33,13 @@ export const shortenURL = (req, res) => {
 };
 export const getURLDetails = (req, res) => {
   console.log(req.params);
-  const shortcode = req.params.shortcode;
+  const shortcode = req.params.shortCode;
   const data = cache.find((link) => link.shortcode === shortcode);
-  console.log("The data is :", data);
-  res
-    .status(200)
-    .json({ message: "Details of the shortened url fetched successfully" });
+  if (!data) {
+    res.status(404).json({ message: "The url was not found" });
+  }
+  res.status(200).json({
+    message: "Details of the shortened url fetched successfully",
+    data: data,
+  });
 };
