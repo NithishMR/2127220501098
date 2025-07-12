@@ -1,45 +1,105 @@
 import cache from "../cache/links.js";
-const links = new Map();
+import lru from "../utils/cache.js";
+import generateRandomURL from "../utils/generateRandomUrl.js";
+const shortCodeToUrl = new Map();
+const urlToShortCode = new Map();
 const randomValues = new Set();
 export const shortenURL = (req, res) => {
   let { url, validity = 30, shortcode } = req.body;
-  if (links.has(url)) {
+  const ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+
+  if (urlToShortCode.has(url)) {
     return res
-      .status(500)
+      .status(409)
       .json({ message: "This link has already been shortened" });
   }
   if (!shortcode) {
-    let code = parseInt(Math.random() * 1000);
-    while (randomValues.has(code)) {
-      code = parseInt(Math.random() * 1000);
+    shortcode = generateRandomURL();
+    while (randomValues.has(shortcode)) {
+      shortcode = generateRandomURL();
     }
-    randomValues.add(code);
-    shortcode = "abcd" + code.toString();
+    randomValues.add(shortcode);
     console.log(shortcode);
   }
-  links.set(url, shortcode);
+  urlToShortCode.set(url, shortcode);
+  shortCodeToUrl.set(shortcode, url);
   cache.push({
     url: url,
     shortcode: shortcode,
-    numberOfTimesClicked: 0,
-    validity: validity,
+    totalClicks: 0,
+    clicks: [],
+    createdAt: new Date().toISOString(),
+    validity: new Date(
+      Date.now() + parseInt(validity) * 60 * 1000
+    ).toISOString(),
+    referrer: req.get("referer") || "direct",
+    ip,
   });
   const result = {
-    shortLink: shortcode,
-    timestamp: Date.now(),
+    shortLink: `http://localhost:3000/${shortcode}`,
+    validity: new Date(
+      Date.now() + parseInt(validity) * 60 * 1000
+    ).toISOString(),
   };
+  console.log(cache);
   //toISOString
   res.status(201).json(result);
 };
-export const getURLDetails = (req, res) => {
-  console.log(req.params);
-  const shortcode = req.params.shortCode;
-  const data = cache.find((link) => link.shortcode === shortcode);
-  if (!data) {
-    res.status(404).json({ message: "The url was not found" });
+export const visitURL = (req, res) => {
+  // console.log("the cache:", cache);
+  const shortcode = req.params.shortcode;
+  if (!shortcode) {
+    return res.status(400).json({ message: "shortcode required" });
   }
-  res.status(200).json({
-    message: "Details of the shortened url fetched successfully",
-    data: data,
+  const ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
+  const referrer = req.get("referer") || "direct";
+  const cached = lru.get(shortcode);
+  if (cached) {
+    console.log("LRU Cache Hit 🔥");
+    cached.clicks.push({
+      timestamp: new Date().toISOString(),
+      ip,
+      referrer,
+    });
+    cached.totalClicks = cached.clicks.length;
+
+    return res.redirect(cached.url);
+  }
+  console.log("The short code:", shortcode);
+  const link = cache.find((link) => link.shortcode === shortcode);
+  console.log(link);
+  if (!link) {
+    return res.status(404).json({ error: "Shortcode not found" });
+  }
+  if (new Date(link.validity) < new Date()) {
+    return res.status(410).json({ error: "Short URL has expired" });
+  }
+  lru.set(shortcode, link);
+
+  link.clicks.push({
+    timestamp: new Date().toISOString(),
+    ip,
+    referrer,
   });
+  link.totalClicks = link.clicks.length;
+
+  return res.redirect(link.url);
+};
+export const getURLDetails = (req, res) => {
+  const shortcode = req.params.shortcode;
+  const link = cache.find((link) => link.shortcode === shortcode);
+  if (!link) {
+    return res.status(404).json({ error: "Shortcode not found" });
+  }
+  const result = {
+    url: link.url,
+    shortcode: link.shortcode,
+    createdAt: link.createdAt,
+    validity: link.validity,
+    totalClicks: link.totalClicks,
+    clicks: link.clicks,
+  };
+  return res.status(200).json(result);
 };
